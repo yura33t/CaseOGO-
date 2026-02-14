@@ -27,14 +27,17 @@ const App: React.FC = () => {
   useEffect(() => {
     const initSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        
         if (session?.user) {
           setUser(session.user);
-          await fetchProfile(session.user.id);
+          await fetchOrCreateProfile(session.user);
+        } else {
+          setLoading(false);
         }
       } catch (err) {
-        console.error("Ошибка синхронизации сессии:", err);
-      } finally {
+        console.error("Session sync error:", err);
         setLoading(false);
       }
     };
@@ -44,29 +47,52 @@ const App: React.FC = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         setUser(session.user);
-        await fetchProfile(session.user.id);
+        await fetchOrCreateProfile(session.user);
       } else {
         setUser(null);
         setProfile(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchProfile = async (id: string) => {
+  const fetchOrCreateProfile = async (currentUser: User) => {
     try {
-      const { data, error } = await supabase.from('profiles').select('*').eq('id', id).single();
-      if (error) throw error;
-      if (data) setProfile(data);
+      // Пытаемся получить профиль
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', currentUser.id)
+        .maybeSingle();
+
+      if (data) {
+        setProfile(data);
+      } else {
+        // Если профиля нет (первый вход), создаем его с 150 GC
+        const { data: newProfile, error: createError } = await supabase
+          .from('profiles')
+          .insert({
+            id: currentUser.id,
+            username: currentUser.user_metadata?.username || 'player_' + currentUser.id.substring(0, 5),
+            gcoins: 150
+          })
+          .select()
+          .single();
+        
+        if (createError) throw createError;
+        if (newProfile) setProfile(newProfile);
+      }
     } catch (err) {
-      console.error("Ошибка загрузки профиля:", err);
+      console.error("Profile error:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
   const refreshProfile = () => {
-    if (user) fetchProfile(user.id);
+    if (user) fetchOrCreateProfile(user);
   };
 
   const handleTabChange = (tab: any) => {
@@ -80,8 +106,8 @@ const App: React.FC = () => {
       <div className="h-screen bg-black flex flex-col items-center justify-center gap-6">
         <div className="w-12 h-12 border-[3px] border-white/5 border-t-white rounded-full animate-spin"></div>
         <div className="flex flex-col items-center">
-          <span className="text-[11px] font-black uppercase tracking-[0.6em] text-white animate-pulse">Синхронизация сессии</span>
-          <span className="text-[8px] font-bold uppercase tracking-[0.2em] text-gray-700 mt-2">Подключение к защищенному узлу</span>
+          <span className="text-[11px] font-black uppercase tracking-[0.6em] text-white animate-pulse">Инициализация системы</span>
+          <span className="text-[8px] font-bold uppercase tracking-[0.2em] text-gray-700 mt-2">Загрузка данных пользователя...</span>
         </div>
       </div>
     );
