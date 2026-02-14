@@ -1,0 +1,5 @@
+{
+  "name": "CaseOGO",
+  "description": "A high-end CS2-style case opening simulator with user authentication, inventories, player search, and an admin panel.",
+  "requestFramePermissions": []
+}
