@@ -25,42 +25,45 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let isMounted = true;
+
     const initSession = async () => {
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) throw error;
         
-        if (session?.user) {
+        if (session?.user && isMounted) {
           setUser(session.user);
           await fetchOrCreateProfile(session.user);
-        } else {
-          setLoading(false);
         }
       } catch (err) {
-        console.error("Session sync error:", err);
-        setLoading(false);
+        console.error("Critical Session Error:", err);
+      } finally {
+        if (isMounted) setLoading(false);
       }
     };
 
     initSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
+      if (session?.user && isMounted) {
         setUser(session.user);
         await fetchOrCreateProfile(session.user);
-      } else {
+      } else if (isMounted) {
         setUser(null);
         setProfile(null);
         setLoading(false);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const fetchOrCreateProfile = async (currentUser: User) => {
     try {
-      // Пытаемся получить профиль
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -70,7 +73,6 @@ const App: React.FC = () => {
       if (data) {
         setProfile(data);
       } else {
-        // Если профиля нет (первый вход), создаем его с 150 GC
         const { data: newProfile, error: createError } = await supabase
           .from('profiles')
           .insert({
@@ -79,15 +81,13 @@ const App: React.FC = () => {
             gcoins: 150
           })
           .select()
-          .single();
+          .maybeSingle();
         
         if (createError) throw createError;
         if (newProfile) setProfile(newProfile);
       }
     } catch (err) {
-      console.error("Profile error:", err);
-    } finally {
-      setLoading(false);
+      console.error("Profile handling error:", err);
     }
   };
 
@@ -106,8 +106,8 @@ const App: React.FC = () => {
       <div className="h-screen bg-black flex flex-col items-center justify-center gap-6">
         <div className="w-12 h-12 border-[3px] border-white/5 border-t-white rounded-full animate-spin"></div>
         <div className="flex flex-col items-center">
-          <span className="text-[11px] font-black uppercase tracking-[0.6em] text-white animate-pulse">Инициализация системы</span>
-          <span className="text-[8px] font-bold uppercase tracking-[0.2em] text-gray-700 mt-2">Загрузка данных пользователя...</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.6em] text-white animate-pulse">CaseOGO System</span>
+          <span className="text-[8px] font-bold uppercase tracking-[0.2em] text-gray-700 mt-2">Connecting to Secure Server...</span>
         </div>
       </div>
     );
@@ -118,7 +118,7 @@ const App: React.FC = () => {
   const isAdmin = profile?.username === 'tester';
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col font-sans selection:bg-white selection:text-black pb-safe">
+    <div className="min-h-screen bg-black text-white flex flex-col font-sans selection:bg-white selection:text-black pb-safe overflow-x-hidden">
       <Header 
         profile={profile} 
         activeTab={activeTab} 
@@ -126,8 +126,8 @@ const App: React.FC = () => {
         onLogout={() => supabase.auth.signOut()}
       />
       
-      <main className="flex-1 container mx-auto px-4 pt-6 pb-28 md:pb-12">
-        <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+      <main className="flex-1 container mx-auto px-4 pt-6 pb-32 md:pb-12">
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-700">
           {activeTab === 'store' && (
             selectedCase === 'shareworld' ? (
               <div className="space-y-6">
@@ -135,7 +135,7 @@ const App: React.FC = () => {
                   onClick={() => setSelectedCase(null)}
                   className="text-gray-600 hover:text-white flex items-center gap-2 font-black uppercase text-[10px] tracking-widest transition-colors py-3 group"
                 >
-                  <span className="group-hover:-translate-x-1 transition-transform">←</span> Магазин / ShareWorld
+                  <span className="group-hover:-translate-x-1 transition-transform">←</span> Return to Cases
                 </button>
                 <CaseOpening profile={profile} onOpened={refreshProfile} />
               </div>
@@ -156,7 +156,7 @@ const App: React.FC = () => {
           {activeTab === 'admin' && isAdmin ? (
             <AdminPanel onAction={refreshProfile} />
           ) : activeTab === 'admin' ? (
-             <div className="p-20 text-center text-gray-800 font-black uppercase tracking-widest">Доступ запрещен</div>
+             <div className="p-20 text-center text-gray-800 font-black uppercase tracking-widest text-xs">Access Denied</div>
           ) : null}
         </div>
       </main>
